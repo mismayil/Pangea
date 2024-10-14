@@ -1,0 +1,2 @@
+# Pangea
+This is the repo for the paper "PANGEA: A FULLY OPEN MULTILINGUAL MULTIMODAL LLM FOR 39 LANGUAGES"
