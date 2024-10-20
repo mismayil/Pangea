@@ -43,7 +43,7 @@ pip install -e .
 
 The `data/sample_data.json` file contains samples of the finetuning data used for training PANGEA. The `data/images` folder contains images referred to in the data sample.
 
-Here is an example of one such data instance:
+Below is an example of one such data instance:
 
 ```json
 {
