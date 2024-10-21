@@ -11,9 +11,9 @@ PANGEA aims to bridge the gap in multilingual and multimodal language processing
 
 The repository is organized into the following directories:
 
-- **train**: Contains scripts and instructions for pretraining and finetuning the PANGEA model.
+- **train**: Contains scripts and instructions for pretraining and finetuning the PANGEA model. We have made modifications from the open-source [Llava-Next](https://github.com/LLaVA-VL/LLaVA-NeXT) repository.
 
-- **evaluation**: Includes code and datasets to assess the model's performance across various tasks and languages.
+- **evaluation**: Includes code and datasets to assess the model's performance across various tasks and languages. The code is modified from the [lmms-eval](https://github.com/EvolvingLMMs-Lab/lmms-eval) repository for evaluation.
 
 - **data**: Provides examples of the finetuning data used for PANGEA, facilitating understanding of the data format and structure.
 
@@ -43,7 +43,7 @@ pip install -e .
 
 The `data/sample_data.json` file contains samples of the finetuning data used for training PANGEA. The `data/images` folder contains images referred to in the data sample.
 
-Below is an example of one such data instance:
+Here is an example of one such data instance:
 
 ```json
 {

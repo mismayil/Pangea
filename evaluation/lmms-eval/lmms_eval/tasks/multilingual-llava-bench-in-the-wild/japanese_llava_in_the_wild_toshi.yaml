@@ -1,0 +1,5 @@
+dataset_path: "toshi456/llava-bench-in-the-wild-ja"
+dataset_kwargs:
+    token: True
+task: "llava_in_the_wild_japanese_toshi"
+include: _default_template.yaml

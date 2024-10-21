@@ -1,0 +1,11 @@
+group: multilingual_llava_in_the_wild
+task:
+  - llava_in_the_wild_arabic
+  - llava_in_the_wild_bengali
+  - llava_in_the_wild_chinese
+  - llava_in_the_wild_french
+  - llava_in_the_wild_hindi
+  - llava_in_the_wild_japanese_toshi
+  - llava_in_the_wild_russian
+  - llava_in_the_wild_spanish
+  - llava_in_the_wild_urdu
