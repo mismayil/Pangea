@@ -1,5 +1,9 @@
 # PANGEA: A FULLY OPEN MULTILINGUAL MULTIMODAL LLM FOR 39 LANGUAGES
 
+[Homepage](https://neulab.github.io/Pangea/) | [Pangea-7B](https://huggingface.co/neulab/Pangea-7B) | [PangeaIns](https://huggingface.co/datasets/neulab/PangeaInstruct) 
+| [PangeaBench](https://huggingface.co/collections/neulab/pangea-6713c3b0d78a453906eb2ed8) | [Github](https://github.com/neulab/Pangea/tree/main)
+| [Arxiv](https://arxiv.org/abs/2410.16153) | [PDF](https://arxiv.org/pdf/2410.16153)
+
 This repository provides the necessary resources and guidelines for setting up, training, and evaluating PANGEA.
 
 ## About PANGEA
