@@ -2,7 +2,7 @@
 
 [Homepage](https://neulab.github.io/Pangea/) | [Pangea-7B](https://huggingface.co/neulab/Pangea-7B) | [PangeaIns](https://huggingface.co/datasets/neulab/PangeaInstruct) 
 | [PangeaBench](https://huggingface.co/collections/neulab/pangea-6713c3b0d78a453906eb2ed8) | [Github](https://github.com/neulab/Pangea/tree/main)
-| [Arxiv](https://arxiv.org/abs/2410.16153) | [PDF](https://arxiv.org/pdf/2410.16153)
+| [Arxiv](https://arxiv.org/abs/2410.16153) | [PDF](https://arxiv.org/pdf/2410.16153) | [Demo](https://huggingface.co/spaces/neulab/Pangea)
 
 This repository provides the necessary resources and guidelines for setting up, training, and evaluating PANGEA.
 
@@ -20,6 +20,8 @@ The repository is organized into the following directories:
 - **evaluation**: Includes code and datasets to assess the model's performance across various tasks and languages. The code is modified from the [lmms-eval](https://github.com/EvolvingLMMs-Lab/lmms-eval) repository for evaluation.
 
 - **data**: Provides examples of the finetuning data used for PANGEA, facilitating understanding of the data format and structure.
+
+- **predict**: Example Python code usage of Pangea-7B.
 
 ## Setting Up
 
@@ -41,7 +43,17 @@ cd evaluation/lmms-eval
 pip install -e .
 ```
 
-3. **Download Datasets**: Acquire the necessary pretraining and fine-tuning datasets. For pretraining, download the LLaVA-Pretrain dataset from [HuggingFace](https://huggingface.co/datasets/liuhaotian/LLaVA-Pretrain). For finetuning, we will release the dataset on huggingface upon publication.
+3. **Download Datasets**: Acquire the necessary pretraining and fine-tuning datasets. For pretraining, download the LLaVA-Pretrain dataset from [HuggingFace](https://huggingface.co/datasets/liuhaotian/LLaVA-Pretrain). For finetuning, download the PangeaIns dataset from [HuggingFace](https://huggingface.co/datasets/neulab/PangeaInstruct).
+
+## Quick Start
+After installing the required packages in `train/LLaVA-NeXT`, you could go to `predict` and run example Python code using Pangea-7B.
+
+```bash
+cd predict
+python predict_all.py # You could evaluate both multimodal inputs and text-only inputs with this script
+python predict_multimodal.py # You could evaluate multimodal inputs with this script but not text-only inputs
+python predict_text_only.py # You could evaluate text-only inputs with this script but not multimodal inputs
+```
 
 ## Sample Data and Format
 
