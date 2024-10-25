@@ -155,3 +155,13 @@ python3 -m accelerate.commands.launch \
 If you would like to evaluate other models on PangeaBench, Replace `${model}` with the path to your model, `${model_type}` with you model type, and `${task}` with the specific evaluation task you wish to perform. Note that we use `conv_template=qwen_1_5` for Pangea, you could change this when using other models.
 
 For detailed instructions and examples, refer to the `script.sh` file in the evaluation directory.
+
+## Citation
+
+@article{yue2024pangeafullyopenmultilingual,
+  title={Pangea: A Fully Open Multilingual Multimodal LLM for 39 Languages},
+  author={Xiang Yue and Yueqi Song and Akari Asai and Seungone Kim and Jean de Dieu Nyandwi and Simran Khanuja and Anjali Kantharuban and Lintang Sutawika and Sathyanarayanan Ramamoorthy and Graham Neubig},
+  year={2024},
+  journal={arXiv preprint arXiv:2410.16153},
+  url={https://arxiv.org/abs/2410.16153}
+}
