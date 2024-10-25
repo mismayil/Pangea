@@ -157,7 +157,7 @@ If you would like to evaluate other models on PangeaBench, Replace `${model}` wi
 For detailed instructions and examples, refer to the `script.sh` file in the evaluation directory.
 
 ## Citation
-
+```
 @article{yue2024pangeafullyopenmultilingual,
   title={Pangea: A Fully Open Multilingual Multimodal LLM for 39 Languages},
   author={Xiang Yue and Yueqi Song and Akari Asai and Seungone Kim and Jean de Dieu Nyandwi and Simran Khanuja and Anjali Kantharuban and Lintang Sutawika and Sathyanarayanan Ramamoorthy and Graham Neubig},
@@ -165,3 +165,4 @@ For detailed instructions and examples, refer to the `script.sh` file in the eva
   journal={arXiv preprint arXiv:2410.16153},
   url={https://arxiv.org/abs/2410.16153}
 }
+```
