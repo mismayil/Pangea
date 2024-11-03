@@ -1,7 +1,8 @@
 #!/bin/bash
 
 cd lmms-eval
-model='Pangea-7B'
+conda activate llava
+model='neulab/Pangea-7B'
 tasks=('mmmu_val' 'marvl') # list of tasks for evaluation
 
 for task in "${tasks[@]}"; do
