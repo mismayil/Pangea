@@ -1,6 +1,6 @@
 dataset_path: neulab/PangeaBench-xmmmu
-task: "mmmu_Japanese_val"
-test_split: ja
+task: "mmmu_English_val"
+test_split: en
 output_type: generate_until
 doc_to_visual: !function utils.mmmu_doc_to_visual
 doc_to_text: !function utils.mmmu_doc_to_text

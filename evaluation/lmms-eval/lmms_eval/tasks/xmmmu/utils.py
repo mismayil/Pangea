@@ -63,7 +63,7 @@ def mmmu_doc_to_visual(doc):
     image_tokens = re.findall(r"<image \d+>", prompt)
     # Remove <> and  swap space as _
     image_tokens = [image_token.strip("<>").replace(" ", "_") for image_token in image_tokens]
-    visual = [base64_to_pil_image(doc[image_token]).convert("RGB") for image_token in image_tokens if doc[image_token] is not None]   ######################################### load image from base64 encoding
+    visual = [doc[image_token].convert("RGB") for image_token in image_tokens if doc[image_token] is not None]   ######################################### load image from base64 encoding
     return visual
 
 
