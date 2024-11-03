@@ -1,4 +1,4 @@
-dataset_path: floschne/maxm
+dataset_path: neulab/PangeaBench-maxm
 dataset_kwargs:
   token: True
 task: "maxm_fr"
