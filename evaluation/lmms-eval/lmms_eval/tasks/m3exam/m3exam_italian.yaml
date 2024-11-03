@@ -1,4 +1,4 @@
-dataset_path: KerwinJob/m3exam
+dataset_path: neulab/PangeaBench-m3exam
 task: "m3exam_italian"
 test_split: italian
 output_type: generate_until
