@@ -1,4 +1,4 @@
-dataset_path: floschne/marvl
+dataset_path: neulab/PangeaBench-marvl
 dataset_name: default
 dataset_kwargs:
   token: True
@@ -7,7 +7,7 @@ test_split: ta
 output_type: generate_until
 doc_to_visual: !function utils.marvl_doc_to_visual
 doc_to_text: !function utils.marvl_doc_to_text
-doc_to_target: "label"
+doc_to_target: !function utils.marvl_doc_to_target
 generation_kwargs:
   max_new_tokens: 16
   temperature: 0
