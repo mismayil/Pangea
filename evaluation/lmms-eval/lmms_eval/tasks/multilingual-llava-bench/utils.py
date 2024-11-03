@@ -1,5 +1,4 @@
 import json
-
 import os
 import requests
 import numpy as np
@@ -9,8 +8,9 @@ import time
 import yaml
 from pathlib import Path
 from copy import deepcopy
-
+from datasets import load_dataset
 from loguru import logger as eval_logger
+from langdetect import detect
 
 NUM_SECONDS_TO_SLEEP = 5
 
@@ -18,7 +18,7 @@ LLAVA_W_METRICS = ["gpt_eval_llava_conv", "gpt_eval_llava_detail", "gpt_eval_lla
 
 rule_dict = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "rule.json"), "r"))
 
-with open(Path(__file__).parent / "llava-in-the-wild.yaml", "r") as f:
+with open(Path(__file__).parent / "_default_template.yaml", "r") as f:
     raw_data = f.readlines()
     safe_data = []
     for i, line in enumerate(raw_data):
@@ -101,11 +101,9 @@ def parse_score(review):
         eval_logger.debug(f"Error: {e}. Returning [-1, -1]")
         return [-1, -1]
 
-
 def llava_doc_to_visual(doc):
     return [doc["image"].convert("RGB")]
-
-
+    
 def llava_doc_to_text(doc, model_specific_prompt_kwargs=None):
     if model_specific_prompt_kwargs is None:
         model_specific_prompt_kwargs = {}
@@ -113,6 +111,8 @@ def llava_doc_to_text(doc, model_specific_prompt_kwargs=None):
     post_prompt = model_specific_prompt_kwargs.get("post_prompt", "")
     return f"{pre_prompt}{doc['question']}{post_prompt}"
 
+def llava_doc_to_target(doc):
+    return doc['gpt_answer']
 
 def llava_process_results(doc, result):
     """
@@ -124,7 +124,7 @@ def llava_process_results(doc, result):
     """
     try:
         question = doc.get("question", "")
-        ans1 = doc.get("gpt_answer", "")
+        ans1 = llava_doc_to_target(doc)
         ans2 = result[0] if result else ""
         captions = doc.get("caption", [])
         context = "\n".join(captions) if isinstance(captions, list) else captions
@@ -136,6 +136,11 @@ def llava_process_results(doc, result):
 
         review, model_name = get_eval(content, 1024)
         scores = parse_score(review)
+        ans1_lan = detect(ans1)
+        ans2_lan = detect(ans2)
+        question_lan = detect(question)
+        if ans2_lan != ans1_lan and ans2_lan != question_lan: 
+            scores[1] = min(0, scores[1])
     except Exception as e:
         eval_logger.error(f"Error for Question ID: {doc.get('question_id', 'Unknown')}: {e}")
         review = "Failed to Get a Proper Review."
