@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cd lmms-eval
-conda activate llava
+conda activate llava-next
 model='neulab/Pangea-7B'
 tasks=('mmmu_val' 'marvl') # list of tasks for evaluation
 
