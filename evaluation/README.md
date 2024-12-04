@@ -6,8 +6,8 @@ To run the evaluation on PangeaBench, use the following command:
 python3 -m accelerate.commands.launch \
         --num_processes=8 \
         -m lmms_eval \
-        --model llava \
-        --model_args pretrained=${model},conv_template=qwen_1_5 \
+        --model pangea \
+        --model_args pretrained=${model} \
         --tasks ${task} \
         --batch_size 1 \
         --log_samples \
@@ -15,7 +15,7 @@ python3 -m accelerate.commands.launch \
         --output_path eval_logs
 ```
 
-Here, `${model}` refers to either a locally available model or a model on HuggingFace, identified by its repository ID. Note that we use `conv_template=qwen_1_5` for Pangea. You should remove this or change to other conv_template when appropriate.
+Here, `${model}` refers to either a locally available model or a model on HuggingFace, identified by its repository ID. Note that we use `conv_template=qwen_1_5` for Pangea. You should change to other conv_template when appropriate.
 
 `script.sh` shows an example script to run evaluation.
 
