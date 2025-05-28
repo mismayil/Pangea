@@ -26,7 +26,7 @@ from torch.nn import CrossEntropyLoss
 # , LlamaModel, LlamaForCausalLM, GenerationConfig
 # from .modeling_llama import LlamaModel, LlamaForCausalLM
 from transformers import LlamaModel, LlamaForCausalLM
-from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers.modeling_outputs import CausalLMOutputWithPast, SequenceClassifierOutputWithPast
 from transformers.generation.utils import GenerateOutput
 
 from llava.model.llava_arch import LlavaMetaModel, LlavaMetaForCausalLM

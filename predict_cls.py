@@ -1,6 +1,6 @@
 import torch
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from llava.model.builder import load_pretrained_model
+from load_cls import load_pretrained_cls_model
 from llava.utils import disable_torch_init
 from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
 from typing import Dict
@@ -11,9 +11,9 @@ from PIL import Image
 disable_torch_init()
 model_path = 'neulab/Pangea-7B'
 model_name = 'Pangea-7B-qwen'
-tokenizer_text_only, model_text_only, _, context_len_text_only = load_pretrained_model(model_path, None, model_name, attn_implementation=None)
-args = {"multimodal": True, "attn_implementation": None}
-tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name, **args)
+tokenizer_text_only, model_text_only, _, context_len_text_only = load_pretrained_cls_model(model_path, None, model_name, attn_implementation=None, num_labels=1)
+args = {"multimodal": True, "attn_implementation": None, "num_labels": 1}
+tokenizer, model, image_processor, context_len = load_pretrained_cls_model(model_path, None, model_name, **args)
 
 def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False, max_len=2048, system_message: str = "You are a helpful assistant.") -> Dict:
     roles = {"human": "<|im_start|>user", "gpt": "<|im_start|>assistant"}
@@ -48,25 +48,14 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
     input_ids.append(input_id)
     return torch.tensor(input_ids, dtype=torch.long)
 
-def generate_output_text_only(prompt, do_sample=False, temperature=0, top_p=0.5, num_beams=1, max_new_tokens=1024):
+def predict_scores_text_only(prompt, do_sample=False, temperature=0, top_p=0.5, num_beams=1, max_new_tokens=1024):
     input_ids = preprocess_qwen([{'from': 'human', 'value': prompt},{'from': 'gpt','value': None}], tokenizer_text_only, has_image=False).cuda()
     with torch.inference_mode():
-        generated_ids = model_text_only.generate(
-            input_ids,
-            do_sample=do_sample,
-            temperature=temperature,
-            top_p=top_p,
-            num_beams=num_beams,
-            max_new_tokens=max_new_tokens,
-            use_cache=True
-        )
-    generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, generated_ids)]
-    outputs = tokenizer_text_only.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    outputs = outputs.strip()
-    return outputs
+        scores = model(input_ids).logits[:, 0].cpu()
+    return scores
 
-def generate_output(prompt, image=None, do_sample=False, temperature=0, top_p=0.5, num_beams=1, max_new_tokens=1024):
-    if image == None: return generate_output_text_only(prompt, do_sample, temperature, top_p, num_beams, max_new_tokens)
+def predict_scores(prompt, image=None, do_sample=False, temperature=0, top_p=0.5, num_beams=1, max_new_tokens=1024):
+    if image == None: return predict_scores_text_only(prompt, do_sample, temperature, top_p, num_beams, max_new_tokens)
     image_tensors = []
     prompt = "<image>\n" + prompt
     image = Image.open(image)
@@ -75,25 +64,14 @@ def generate_output(prompt, image=None, do_sample=False, temperature=0, top_p=0.
     input_ids = preprocess_qwen([{'from': 'human', 'value': prompt},{'from': 'gpt','value': None}], tokenizer, has_image=True).cuda()
     print(input_ids)
     with torch.inference_mode():
-        output_ids = model.generate(
-            input_ids,
-            images=image_tensors,
-            do_sample=do_sample,
-            temperature=temperature,
-            top_p=top_p,
-            num_beams=num_beams,
-            max_new_tokens=max_new_tokens,
-            use_cache=True
-        )
-    outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
-    outputs = outputs.strip()
-    return outputs
+        scores = model(input_ids, images=image_tensors).logits[:, 0].cpu()
+    return scores
 
 # image + text
 prompt = "What did you see in the image"
-image = "../data/images/general/allava-4v/89708.jpeg"
-print(generate_output(prompt, image=image))
+image = "data/images/general/allava-4v/89708.jpeg"
+print(predict_scores(prompt, image=image))
 
 # text-only
 prompt = "Write me a python function that could sort a input integer list by descending order"
-print(generate_output(prompt))
+print(predict_scores(prompt))
