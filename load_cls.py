@@ -24,39 +24,11 @@ from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, D
 from llava.utils import rank0_print
 
 
-def load_pretrained_cls_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", torch_dtype="float16",
-                          attn_implementation="flash_attention_2", customized_config=None, overwrite_config=None, **kwargs):
-    kwargs["device_map"] = device_map
+def load_pretrained_cls_model(model_path, model_base=None, multimodal=False, **kwargs):
+    device_map = kwargs.get("device_map", "auto")
 
-    if load_8bit:
-        kwargs["load_in_8bit"] = True
-    elif load_4bit:
-        kwargs["load_in_4bit"] = True
-        kwargs["quantization_config"] = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
-    elif torch_dtype == "float16":
-        kwargs["torch_dtype"] = torch.float16
-    elif torch_dtype == "bfloat16":
-        kwargs["torch_dtype"] = torch.bfloat16
-    else:
-        import pdb;pdb.set_trace()
-
-    if customized_config is not None:
-        kwargs["config"] = customized_config
-
-    if "multimodal" in kwargs:
-        if kwargs["multimodal"] is True:
-            is_multimodal = True
-            kwargs.pop("multimodal")
-    else:
-        is_multimodal = False
-
-    if "llava" in model_name.lower() or is_multimodal:
-        # Load LLaVA model
-        if "lora" in model_name.lower() and model_base is None:
-            warnings.warn(
-                "There is `lora` in model name but no `model_base` is provided. If you are loading a LoRA model, please provide the `model_base` argument. Detailed instruction: https://github.com/haotian-liu/LLaVA#launch-a-model-worker-lora-weights-unmerged."
-            )
-        if "lora" in model_name.lower() and model_base is not None:
+    if multimodal:
+        if model_base is not None:
             lora_cfg_pretrained = AutoConfig.from_pretrained(model_path)
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
             rank0_print("Loading LLaVA from base model...")
@@ -64,7 +36,7 @@ def load_pretrained_cls_model(model_path, model_base, model_name, load_8bit=Fals
 
             lora_cfg_pretrained = LlavaQwenConfig.from_pretrained(model_path)
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
-            model = LlavaQwenForSequenceClassification.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
+            model = LlavaQwenForSequenceClassification.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
 
             token_num, tokem_dim = model.score.out_features, model.score.in_features
             if model.score.weight.shape[0] != token_num:
@@ -95,34 +67,11 @@ def load_pretrained_cls_model(model_path, model_base, model_name, load_8bit=Fals
             rank0_print("Merging LoRA weights...")
             model = model.merge_and_unload()
             rank0_print("Model is loaded...")
-        elif model_base is not None:  # this may be mm projector only, loading projector with preset language mdoel
-            rank0_print(f"Loading LLaVA from base model {model_base}...")
-            if "qwen" in model_name.lower():
-                tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
-                cfg_pretrained = AutoConfig.from_pretrained(model_path)
-                model = LlavaQwenForSequenceClassification.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
-            else:
-                raise ValueError(f"Model {model_name} not supported")
-
-            mm_projector_weights = torch.load(os.path.join(model_path, "mm_projector.bin"), map_location="cpu")
-            mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
-            model.load_state_dict(mm_projector_weights, strict=False)
         else:
             rank0_print(f"Loaded LLaVA model: {model_path}")
-            if "qwen" in model_name.lower() or "quyen" in model_name.lower():
-                tokenizer = AutoTokenizer.from_pretrained(model_path)
-                from llava.model.language_model.llava_qwen_cls import LlavaQwenConfig
-                if overwrite_config is not None:
-                    llava_cfg = LlavaQwenConfig.from_pretrained(model_path)
-                    rank0_print(f"Overwriting config with {overwrite_config}")
-                    for k, v in overwrite_config.items():
-                        setattr(llava_cfg, k, v)
-                    model = LlavaQwenForSequenceClassification.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
-                else:
-                    model = LlavaQwenForSequenceClassification.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, **kwargs)
-            else:
-                    raise ValueError(f"Model {model_name} not supported")
-
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            from llava.model.language_model.llava_qwen_cls import LlavaQwenConfig
+            model = LlavaQwenForSequenceClassification.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
     else:
         # Load language model
         if model_base is not None:
@@ -139,17 +88,13 @@ def load_pretrained_cls_model(model_path, model_base, model_name, load_8bit=Fals
             model.to(torch.float16)
         else:
             use_fast = False
-            if "mpt" in model_name.lower().replace("prompt", ""):
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
-                model = AutoModelForSequenceClassification.from_pretrained(model_path, low_cpu_mem_usage=True, trust_remote_code=True, **kwargs)
-            else:
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-                model = AutoModelForSequenceClassification.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
+            tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+            model = AutoModelForSequenceClassification.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
 
     rank0_print(f"Model Class: {model.__class__.__name__}")
     image_processor = None
 
-    if "llava" in model_name.lower() or is_multimodal:
+    if multimodal:
         mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
         mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
         if mm_use_im_patch_token:
@@ -165,13 +110,4 @@ def load_pretrained_cls_model(model_path, model_base, model_name, load_8bit=Fals
             vision_tower.to(device="cuda", dtype=torch.float16)
         image_processor = vision_tower.image_processor
 
-    if hasattr(model.config, "max_sequence_length"):
-        context_len = model.config.max_sequence_length
-    elif hasattr(model.config, "max_position_embeddings"):
-        context_len = model.config.max_position_embeddings
-    elif hasattr(model.config, "tokenizer_model_max_length"):
-        context_len = model.config.tokenizer_model_max_length
-    else:
-        context_len = 2048
-
-    return tokenizer, model, image_processor, context_len
+    return tokenizer, model, image_processor

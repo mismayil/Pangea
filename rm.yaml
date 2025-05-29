@@ -1,0 +1,33 @@
+# Model arguments
+model_name_or_path: neulab/Pangea-7B
+dataset_name: CNCL-Penn-State/cpo_en_multitask_text_fa_msd5_mm10_ms20_div_nov_sur_qua
+dataset_train_split: rm_train
+dataset_test_split: val_sample1024
+output_dir: /mnt/scratch/home/ismayilz/project-cpo/models/cpo-rm-llama-3.1-8b-instruct-msd5-lb1k-lbs1
+
+# Training arguments
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 16
+num_train_epochs: 1
+gradient_checkpointing: true
+gradient_accumulation_steps: 8
+learning_rate: 2.0e-6
+lr_scheduler_type: cosine
+weight_decay: 1.0e-3
+logging_steps: 4
+eval_strategy: steps
+eval_steps: 8
+save_strategy: steps
+save_steps: 128
+save_total_limit: 1
+max_length: 1024
+# report_to: wandb
+# run_name: cpo-rm-llama-3.1-8b-instruct-msd5-lb1k-lbs1
+dataloader_num_workers: 4
+dataloader_prefetch_factor: 2
+metric_for_best_model: accuracy
+greater_is_better: true
+torch_empty_cache_steps: 8
+seed: 42
+fp16: true
+add_margin_loss: true

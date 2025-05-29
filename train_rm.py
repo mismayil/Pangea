@@ -33,93 +33,19 @@ from trl import (
 )
 
 from utils import find_latest_checkpoint, H4ArgumentParser
-from data import get_prompt_and_responses_from_trl_sample
 
+from load_cls import load_pretrained_cls_model
 
 @dataclass
 class RewardScriptArguments(ScriptArguments):
     add_margin_loss: Optional[bool] = field(
         default=False, metadata={"help": "Add margin loss to the reward model."}
     )
-    add_length_bias_loss: Optional[bool] = field(
-        default=False, metadata={"help": "Add length bias loss to the reward model."}
-    )
 
-
-@dataclass
-class CustomRewardConfig(RewardConfig):
-    length_bias_coefficient: Optional[float] = field(
-        default=1.0, metadata={"help": "Coefficient for the length bias loss."}
-    )
-
-
-class CustomRewardTrainer(RewardTrainer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def compute_loss(
-        self,
-        model,
-        inputs,
-        return_outputs=False,
-        num_items_in_batch=None,
-    ):
-        rewards_chosen = model(
-            input_ids=inputs["input_ids_chosen"],
-            attention_mask=inputs["attention_mask_chosen"],
-            return_dict=True,
-        )["logits"]
-        rewards_rejected = model(
-            input_ids=inputs["input_ids_rejected"],
-            attention_mask=inputs["attention_mask_rejected"],
-            return_dict=True,
-        )["logits"]
-        # calculate loss, optionally modulate with margin
-
-        if "margin" in inputs:
-            loss = -nn.functional.logsigmoid(
-                rewards_chosen - rewards_rejected - inputs["margin"]
-            )
-        else:
-            loss = -nn.functional.logsigmoid(rewards_chosen - rewards_rejected)
-
-        if "length_bias" in inputs:
-            loss += self.args.length_bias_coefficient * inputs["length_bias"]
-
-        loss = loss.mean()
-
-        if self.args.center_rewards_coefficient is not None:
-            loss += self.args.center_rewards_coefficient * torch.mean(
-                (rewards_chosen + rewards_rejected) ** 2
-            )
-
-        if return_outputs:
-            return loss, {
-                "rewards_chosen": rewards_chosen,
-                "rewards_rejected": rewards_rejected,
-            }
-        return loss
-
-    def evaluate(self, *args, **kwargs):
-        num_print_samples = kwargs.pop("num_print_samples", 4)
-        # self.visualize_samples(num_print_samples)
-        return Trainer.evaluate(self, *args, **kwargs)
 
 def add_margin(row):
     # Assume you have a score_chosen and score_rejected columns that you want to use to compute the margin
     return {"margin": row["score_chosen"] - row["score_rejected"]}
-
-
-def add_length_bias(row, max_length_bias):
-    _, chosen_response, rejected_response = get_prompt_and_responses_from_trl_sample(
-        row
-    )
-    return {
-        "length_bias": max(
-            0, (len(chosen_response.split()) - len(rejected_response.split()))
-        )
-        / max_length_bias
-    }
 
 
 def compute_accuracy(eval_pred: EvalPrediction) -> dict[str, float]:
@@ -176,7 +102,7 @@ def compute_accuracy(eval_pred: EvalPrediction) -> dict[str, float]:
 
 
 if __name__ == "__main__":
-    parser = H4ArgumentParser((RewardScriptArguments, CustomRewardConfig, ModelConfig))
+    parser = H4ArgumentParser((RewardScriptArguments, RewardConfig, ModelConfig))
     script_args, training_args, model_args = parser.parse()
     training_args.gradient_checkpointing_kwargs = dict(use_reentrant=False)
 
@@ -206,19 +132,11 @@ if __name__ == "__main__":
         quantization_config=quantization_config,
         use_cache=False if training_args.gradient_checkpointing else True,
         torch_dtype=torch_dtype,
-        attn_implementation="eager" if "gemma" in model_args.model_name_or_path.lower() else model_args.attn_implementation
+        attn_implementation="eager" if "gemma" in model_args.model_name_or_path.lower() else model_args.attn_implementation,
+        num_labels=1,  # For reward models, we typically have a single output for the score
     )
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        trust_remote_code=model_args.trust_remote_code,
-        use_fast=True,
-    )
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_args.model_name_or_path,
-        num_labels=1,
-        trust_remote_code=model_args.trust_remote_code,
-        **model_kwargs,
-    )
+    tokenizer, model, _ = load_pretrained_cls_model(model_args.model_name_or_path, **model_kwargs)
+
     # Align padding tokens between tokenizer and model
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -243,22 +161,10 @@ if __name__ == "__main__":
     if script_args.add_margin_loss:
         dataset = dataset.map(add_margin)
 
-    if script_args.add_length_bias_loss:
-        length_biases = []
-        for sample in dataset[script_args.dataset_train_split]:
-            prompt, chosen_response, rejected_response = (
-                get_prompt_and_responses_from_trl_sample(sample)
-            )
-            length_biases.append(
-                len(chosen_response.split()) - len(rejected_response.split())
-            )
-        max_length_bias = max(length_biases)
-        dataset = dataset.map(partial(add_length_bias, max_length_bias=max_length_bias))
-
     ##########
     # Training
     ##########
-    trainer = CustomRewardTrainer(
+    trainer = RewardTrainer(
         model=model,
         processing_class=tokenizer,
         args=training_args,
