@@ -1,6 +1,6 @@
 import torch
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from load_cls import load_pretrained_cls_model
+from modeling import load_pretrained_cls_model
 from llava.utils import disable_torch_init
 from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
 from typing import Dict

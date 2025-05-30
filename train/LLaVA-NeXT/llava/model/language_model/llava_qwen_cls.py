@@ -8,7 +8,7 @@ from transformers import AutoConfig, AutoModelForSequenceClassification, PreTrai
 from transformers import Qwen2Config, Qwen2Model, Qwen2ForSequenceClassification, ProcessorMixin, BatchEncoding
 from transformers.modeling_outputs import SequenceClassifierOutputWithPast
 from transformers.cache_utils import Cache
-
+from transformers.image_utils import load_image
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
 from llava.model.llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
@@ -52,9 +52,7 @@ class LlavaQwenForSequenceClassification(Qwen2ForSequenceClassification, LlavaMe
 
     def __init__(self, config):
         Qwen2ForSequenceClassification.__init__(self, config)
-        self.num_labels = config.num_labels
         self.model = LlavaQwenModel(config)
-        self.score = nn.Linear(config.hidden_size, self.num_labels, bias=False)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -103,8 +101,8 @@ class LlavaQwenForSequenceClassification(Qwen2ForSequenceClassification, LlavaMe
 class LlavaQwenProcessor(ProcessorMixin):
     attributes = ["image_processor", "tokenizer"]
     chat_template = CHAT_TEMPLATE
-    # image_processor_class = "LayoutLMv3ImageProcessor"
-    # tokenizer_class = ("LayoutLMv3Tokenizer", "LayoutLMv3TokenizerFast")
+    image_processor_class = "BaseImageProcessor"
+    tokenizer_class = ("PreTrainedTokenizer", "PreTrainedTokenizerFast")
 
     def __init__(self, image_processor=None, tokenizer=None, **kwargs):
         if image_processor is None:
@@ -118,8 +116,6 @@ class LlavaQwenProcessor(ProcessorMixin):
         return self.tokenizer.apply_chat_template(
             conversation,
             chat_template=chat_template or self.chat_template,
-            tokenize=False,
-            add_generation_prompt=False,
             **kwargs
         )
 
@@ -129,15 +125,15 @@ class LlavaQwenProcessor(ProcessorMixin):
         images,
         **kwargs,
     ) -> BatchEncoding:
-        image_tensors = []
+        image_ids = []
 
         for image in images:
-            image = Image.open(image)
-            image_tensors.append(image)
+            image = load_image(image)
+            image_ids.append(image)
 
-        pixel_values = self.image_processor.preprocess(image_tensors, return_tensors='pt')['pixel_values']
+        pixel_values = self.image_processor.preprocess(image_ids, return_tensors='pt')['pixel_values']
 
-        encoded_inputs = self.tokenizer(text)
+        encoded_inputs = self.tokenizer(text, **kwargs)
         image_token_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_IMAGE_TOKEN)
         encoded_inputs["input_ids"][encoded_inputs["input_ids"].index(image_token_id)] = IMAGE_TOKEN_INDEX
         encoded_inputs["pixel_values"] = pixel_values

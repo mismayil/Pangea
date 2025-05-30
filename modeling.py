@@ -19,7 +19,7 @@ import shutil
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig, BitsAndBytesConfig
 import torch
-from llava.model import *
+from llava.model.language_model.llava_qwen_cls import LlavaQwenProcessor, LlavaQwenForSequenceClassification, LlavaQwenConfig
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from llava.utils import rank0_print
 
@@ -32,7 +32,6 @@ def load_pretrained_cls_model(model_path, model_base=None, multimodal=False, **k
             lora_cfg_pretrained = AutoConfig.from_pretrained(model_path)
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
             rank0_print("Loading LLaVA from base model...")
-            from llava.model.language_model.llava_qwen_cls import LlavaQwenConfig
 
             lora_cfg_pretrained = LlavaQwenConfig.from_pretrained(model_path)
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
@@ -70,7 +69,6 @@ def load_pretrained_cls_model(model_path, model_base=None, multimodal=False, **k
         else:
             rank0_print(f"Loaded LLaVA model: {model_path}")
             tokenizer = AutoTokenizer.from_pretrained(model_path)
-            from llava.model.language_model.llava_qwen_cls import LlavaQwenConfig
             model = LlavaQwenForSequenceClassification.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
     else:
         # Load language model
@@ -110,4 +108,14 @@ def load_pretrained_cls_model(model_path, model_base=None, multimodal=False, **k
             vision_tower.to(device="cuda", dtype=torch.float16)
         image_processor = vision_tower.image_processor
 
-    return tokenizer, model, image_processor
+    # Align padding tokens between tokenizer and model
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model.config.pad_token_id = tokenizer.pad_token_id
+
+    if multimodal:
+        processor = LlavaQwenProcessor(image_processor=image_processor, tokenizer=tokenizer)
+    else:
+        processor = tokenizer
+    
+    return model, processor

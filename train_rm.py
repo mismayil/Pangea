@@ -1,24 +1,18 @@
 # adapted from https://github.com/huggingface/trl/blob/main/examples/scripts/reward_modeling.py
 import warnings
 from dotenv import load_dotenv
-import os
-import torch.functional as F
-import torch.nn as nn
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Optional
-from functools import partial
+from typing import Optional, Any
+from accelerate import PartialState
 
 load_dotenv()
 
 import torch
 from datasets import load_dataset
 from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    HfArgumentParser,
     EvalPrediction,
-    Trainer
+    ProcessorMixin
 )
 
 from trl import (
@@ -28,13 +22,12 @@ from trl import (
     ScriptArguments,
     get_kbit_device_map,
     get_peft_config,
-    get_quantization_config,
-    setup_chat_format,
+    get_quantization_config
 )
 
 from utils import find_latest_checkpoint, H4ArgumentParser
-
-from load_cls import load_pretrained_cls_model
+from trl.data_utils import maybe_apply_chat_template
+from modeling import load_pretrained_cls_model
 
 @dataclass
 class RewardScriptArguments(ScriptArguments):
@@ -47,6 +40,44 @@ def add_margin(row):
     # Assume you have a score_chosen and score_rejected columns that you want to use to compute the margin
     return {"margin": row["score_chosen"] - row["score_rejected"]}
 
+def _process(batch: dict[str, list[Any]], tokenizer: "ProcessorMixin") -> dict[str, list[Any]]:
+    """Tokenize a batch from a reward modelling dataset."""
+    new_examples = {
+        "input_ids_chosen": [],
+        "attention_mask_chosen": [],
+        "input_ids_rejected": [],
+        "attention_mask_rejected": [],
+        "pixel_values": [],
+    }
+    for chosen, rejected, image in zip(batch["chosen"], batch["rejected"], batch["image"]):
+        tokenized_chosen = tokenizer(chosen, [image])
+        tokenized_rejected = tokenizer(rejected, [image])
+        new_examples["input_ids_chosen"].append(tokenized_chosen["input_ids"])
+        new_examples["attention_mask_chosen"].append(tokenized_chosen["attention_mask"])
+        new_examples["input_ids_rejected"].append(tokenized_rejected["input_ids"])
+        new_examples["attention_mask_rejected"].append(tokenized_rejected["attention_mask"])
+        new_examples["pixel_values"].append(tokenized_chosen["pixel_values"])  # Assuming pixel_values are the same for both chosen and rejected
+
+    return new_examples
+
+def process_dataset(dataset, processor, max_length=1024, dataset_num_proc=1):
+    with PartialState().main_process_first():
+        fn_kwargs = {"tokenizer": processor}
+        dataset = dataset.map(maybe_apply_chat_template, fn_kwargs={"tokenizer": processor})
+        dataset = dataset.map(
+            _process,
+            batched=True,
+            fn_kwargs=fn_kwargs,
+            num_proc=dataset_num_proc,
+        )
+        # This filter is important because otherwise you get samples that exceed the model's context length and
+        # get truncated => noisy signal the chosen/rejected label gets lost. The downside is that the
+        # user might get surprised if N samples are missing from training.
+        dataset = dataset.filter(
+            lambda x: len(x["input_ids_chosen"]) <= max_length and len(x["input_ids_rejected"]) <= max_length,
+            num_proc=dataset_num_proc,
+        )
+    return dataset
 
 def compute_accuracy(eval_pred: EvalPrediction) -> dict[str, float]:
     predictions, labels = eval_pred
@@ -117,9 +148,7 @@ if __name__ == "__main__":
             print(f"No checkpoint found in {checkpoint_dir}. Starting from scratch.")
             training_args.resume_from_checkpoint = None
 
-    ################
-    # Model & Tokenizer
-    ################
+    ## Load model and processor
     torch_dtype = (
         model_args.torch_dtype
         if model_args.torch_dtype in ["auto", None]
@@ -135,16 +164,7 @@ if __name__ == "__main__":
         attn_implementation="eager" if "gemma" in model_args.model_name_or_path.lower() else model_args.attn_implementation,
         num_labels=1,  # For reward models, we typically have a single output for the score
     )
-    tokenizer, model, _ = load_pretrained_cls_model(model_args.model_name_or_path, **model_kwargs)
-
-    # Align padding tokens between tokenizer and model
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    model.config.pad_token_id = tokenizer.pad_token_id
-
-    # If post-training a base model, use ChatML as the default template
-    if tokenizer.chat_template is None:
-        model, tokenizer = setup_chat_format(model, tokenizer)
+    model, processor = load_pretrained_cls_model(model_args.model_name_or_path, multimodal=True, **model_kwargs)
 
     if model_args.use_peft and model_args.lora_task_type != "SEQ_CLS":
         warnings.warn(
@@ -153,27 +173,40 @@ if __name__ == "__main__":
             UserWarning,
         )
 
-    ##############
-    # Load dataset
-    ##############
+    ## Load dataset
     dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
 
     if script_args.add_margin_loss:
         dataset = dataset.map(add_margin)
 
-    ##########
-    # Training
-    ##########
+    train_dataset = process_dataset(
+        dataset[script_args.dataset_train_split],
+        processor=processor,
+        max_length=training_args.max_length,
+        dataset_num_proc=training_args.dataset_num_proc,
+    )
+    eval_dataset = (
+        process_dataset(
+            dataset[script_args.dataset_test_split],
+            processor=processor,
+            max_length=training_args.max_length,
+            dataset_num_proc=training_args.dataset_num_proc,
+        )
+        if training_args.eval_strategy != "no"
+        else None
+    )
+
+    ## Training
     trainer = RewardTrainer(
         model=model,
-        processing_class=tokenizer,
+        processing_class=processor.tokenizer,
         args=training_args,
-        train_dataset=dataset[script_args.dataset_train_split].shuffle(
+        train_dataset=train_dataset.shuffle(
             seed=training_args.seed
         ),
         eval_dataset=(
-            dataset[script_args.dataset_test_split].shuffle(seed=training_args.seed)
-            if training_args.eval_strategy != "no"
+            eval_dataset.shuffle(seed=training_args.seed)
+            if eval_dataset is not None
             else None
         ),
         peft_config=get_peft_config(model_args),
@@ -181,9 +214,6 @@ if __name__ == "__main__":
     )
     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
 
-    ############################
-    # Save model and push to Hub
-    ############################
     trainer.save_model(training_args.output_dir)
 
     if training_args.eval_strategy != "no":
