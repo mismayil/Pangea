@@ -139,19 +139,44 @@ class LlavaQwenProcessor(ProcessorMixin):
         encoded_inputs["pixel_values"] = pixel_values
         return encoded_inputs
 
-    def batch_decode(self, *args, **kwargs):
+    def batch_decode(self, sequences, *args, **kwargs):
         """
         This method forwards all its arguments to PreTrainedTokenizer's [`~PreTrainedTokenizer.batch_decode`]. Please
         refer to the docstring of this method for more information.
         """
-        return self.tokenizer.batch_decode(*args, **kwargs)
+        sequences[sequences == IMAGE_TOKEN_INDEX] = self.tokenizer.convert_tokens_to_ids(DEFAULT_IMAGE_TOKEN)
+        return self.tokenizer.batch_decode(sequences, *args, **kwargs)
 
-    def decode(self, *args, **kwargs):
+    def decode(self, token_ids, *args, **kwargs):
         """
         This method forwards all its arguments to PreTrainedTokenizer's [`~PreTrainedTokenizer.decode`]. Please refer
         to the docstring of this method for more information.
         """
-        return self.tokenizer.decode(*args, **kwargs)
+        token_ids[token_ids == IMAGE_TOKEN_INDEX] = self.tokenizer.convert_tokens_to_ids(DEFAULT_IMAGE_TOKEN)
+        return self.tokenizer.decode(token_ids, *args, **kwargs)
+
+    def pad(self, *args, **kwargs):
+        """
+        This method forwards all its arguments to PreTrainedTokenizer's [`~PreTrainedTokenizer.pad`]. Please refer to
+        the docstring of this method for more information.
+        """
+        return self.tokenizer.pad(*args, **kwargs)
+
+    @property
+    def pad_token(self):
+        return self.tokenizer.pad_token
+
+    @property
+    def pad_token_id(self):
+        return self.tokenizer.pad_token_id
+    
+    @property
+    def eos_token(self):
+        return self.tokenizer.eos_token
+    
+    @property
+    def eos_token_id(self):
+        return self.tokenizer.eos_token_id
 
     @property
     def model_input_names(self):

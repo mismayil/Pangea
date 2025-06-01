@@ -3,8 +3,9 @@ import warnings
 from dotenv import load_dotenv
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import Optional, Any, Union
 from accelerate import PartialState
+import torch.nn as nn
 
 load_dotenv()
 
@@ -12,7 +13,9 @@ import torch
 from datasets import load_dataset
 from transformers import (
     EvalPrediction,
-    ProcessorMixin
+    ProcessorMixin,
+    PreTrainedTokenizerBase,
+    PreTrainedModel,
 )
 
 from trl import (
@@ -78,6 +81,126 @@ def process_dataset(dataset, processor, max_length=1024, dataset_num_proc=1):
             num_proc=dataset_num_proc,
         )
     return dataset
+
+
+@dataclass
+class MultimodalRewardDataCollatorWithPadding:
+    r"""
+    Reward DataCollator class that pads the inputs to the maximum length of the batch.
+
+    Args:
+        tokenizer (`PreTrainedTokenizerBase`):
+            The tokenizer used for encoding the data.
+        padding (`Union[bool, str, `PaddingStrategy`]`, `optional`, defaults to `True`):
+            padding_strategy to pass to the tokenizer.
+        pad_to_multiple_of (`int` or `None`, `optional`, defaults to `None`):
+            If set will pad the sequence to a multiple of the provided value.
+        return_tensors (`str`, `optional`, defaults to `"pt"`):
+            The tensor type to use.
+    """
+
+    tokenizer: PreTrainedTokenizerBase
+    padding: Union[bool, str] = True
+    pad_to_multiple_of: Optional[int] = None
+    return_tensors: str = "pt"
+
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, Any]:
+        features_chosen = []
+        features_rejected = []
+        margin = []
+        # check if we have a margin. If we do, we need to batch it as well
+        has_margin = "margin" in features[0]
+        for feature in features:
+            # check if the keys are named as expected
+            if (
+                "input_ids_chosen" not in feature
+                or "input_ids_rejected" not in feature
+                or "attention_mask_chosen" not in feature
+                or "attention_mask_rejected" not in feature
+            ):
+                raise ValueError(
+                    "The features should include `input_ids_chosen`, `attention_mask_chosen`, `input_ids_rejected` and `attention_mask_rejected`"
+                )
+
+            features_chosen.append(
+                {
+                    "input_ids": feature["input_ids_chosen"],
+                    "attention_mask": feature["attention_mask_chosen"],
+                    "pixel_values": feature.get("pixel_values", None),  # Assuming pixel_values is optional
+                }
+            )
+            features_rejected.append(
+                {
+                    "input_ids": feature["input_ids_rejected"],
+                    "attention_mask": feature["attention_mask_rejected"],
+                    "pixel_values": feature.get("pixel_values", None),  # Assuming pixel_values is optional
+                }
+            )
+            if has_margin:
+                margin.append(feature["margin"])
+        batch_chosen = self.tokenizer.pad(
+            features_chosen,
+            padding=self.padding,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors=self.return_tensors,
+        )
+        batch_rejected = self.tokenizer.pad(
+            features_rejected,
+            padding=self.padding,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors=self.return_tensors,
+        )
+        batch = {
+            "input_ids_chosen": batch_chosen["input_ids"],
+            "attention_mask_chosen": batch_chosen["attention_mask"],
+            "input_ids_rejected": batch_rejected["input_ids"],
+            "attention_mask_rejected": batch_rejected["attention_mask"],
+            "pixel_values": batch_chosen["pixel_values"],  # Assuming pixel_values are the same for both chosen and rejected
+            "return_loss": True,
+            "modalities": ["image"] * len(batch_chosen["input_ids"]),
+        }
+        if has_margin:
+            margin = torch.tensor(margin, dtype=torch.float)
+            batch["margin"] = margin
+        return batch
+
+class MultimodalRewardTrainer(RewardTrainer):
+    def compute_loss(
+        self,
+        model: Union[PreTrainedModel, nn.Module],
+        inputs: dict[str, Union[torch.Tensor, Any]],
+        return_outputs=False,
+        num_items_in_batch=None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, dict[str, torch.Tensor]]]:
+        rewards_chosen = model(
+            input_ids=inputs["input_ids_chosen"],
+            attention_mask=inputs["attention_mask_chosen"],
+            pixel_values=inputs.get("pixel_values", None),  # Assuming pixel_values is optional
+            modalities=inputs.get("modalities", None),  # Assuming modalities is optional
+            return_dict=True,
+        )["logits"]
+        rewards_rejected = model(
+            input_ids=inputs["input_ids_rejected"],
+            attention_mask=inputs["attention_mask_rejected"],
+            pixel_values=inputs.get("pixel_values", None),  # Assuming pixel_values is optional
+            modalities=inputs.get("modalities", None),  # Assuming modalities is optional
+            return_dict=True,
+        )["logits"]
+        # calculate loss, optionally modulate with margin
+        if "margin" in inputs:
+            loss = -nn.functional.logsigmoid(rewards_chosen - rewards_rejected - inputs["margin"]).mean()
+        else:
+            loss = -nn.functional.logsigmoid(rewards_chosen - rewards_rejected).mean()
+
+        if self.args.center_rewards_coefficient is not None:
+            loss += self.args.center_rewards_coefficient * torch.mean((rewards_chosen + rewards_rejected) ** 2)
+
+        if return_outputs:
+            return loss, {
+                "rewards_chosen": rewards_chosen,
+                "rewards_rejected": rewards_rejected,
+            }
+        return loss
 
 def compute_accuracy(eval_pred: EvalPrediction) -> dict[str, float]:
     predictions, labels = eval_pred
@@ -197,9 +320,9 @@ if __name__ == "__main__":
     )
 
     ## Training
-    trainer = RewardTrainer(
+    trainer = MultimodalRewardTrainer(
         model=model,
-        processing_class=processor.tokenizer,
+        processing_class=processor,
         args=training_args,
         train_dataset=train_dataset.shuffle(
             seed=training_args.seed
@@ -211,6 +334,9 @@ if __name__ == "__main__":
         ),
         peft_config=get_peft_config(model_args),
         compute_metrics=compute_accuracy,
+        data_collator=MultimodalRewardDataCollatorWithPadding(
+            tokenizer=processor.tokenizer,
+        ),
     )
     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
 
